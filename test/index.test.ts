@@ -1,7 +1,8 @@
+import { expectTypeOf } from 'expect-type';
 import { createServer } from 'http';
 import supertest from 'supertest';
 import { z } from 'zod';
-import { nh } from '../src/index';
+import { InferType, nh } from '../src/index';
 
 const rq = (handler: any) => supertest(createServer(handler.build()));
 
@@ -55,6 +56,8 @@ test('custom-error', async () => {
     throw new Error();
   });
 
+  expectTypeOf(errorData).toMatchTypeOf<InferType<typeof handler>['error']>();
+
   return await rq(handler)
     .get('/')
     .expect('Content-Type', 'application/json')
@@ -74,6 +77,10 @@ test('custom-notFound', async () => {
     throw new Error();
   });
 
+  expectTypeOf(notFoundData).toMatchTypeOf<
+    InferType<typeof handler>['notFound']
+  >();
+
   return await rq(handler)
     .patch('/')
     .expect('Content-Type', 'application/json')
@@ -90,11 +97,14 @@ test('body', async () => {
       }),
     },
     ({ req }) => {
+      expectTypeOf(req.body).toMatchTypeOf<{ name: string; number: number }>();
       return req.body;
     }
   );
 
   const data = { name: 'John', number: 15 };
+
+  expectTypeOf(data).toMatchTypeOf<InferType<typeof handler>['post']['data']>();
 
   return await rq(handler)
     .post('')
@@ -134,11 +144,16 @@ test('query', async () => {
       }),
     },
     ({ req }) => {
+      expectTypeOf(req.query).toMatchTypeOf<{ text: string; id: number }>();
       return req.query;
     }
   );
 
   const query = { text: 'test', id: 0 };
+
+  expectTypeOf(query).toMatchTypeOf<
+    InferType<typeof handler>['post']['query']
+  >();
 
   return await rq(handler)
     .post('/?text=test&id=0')
