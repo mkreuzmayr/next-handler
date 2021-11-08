@@ -1650,6 +1650,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expect-type@npm:^0.13.0":
+  version: 0.13.0
+  resolution: "expect-type@npm:0.13.0"
+  checksum: 484f58fa8b256ee7316c3667874011e100307792d4494cc67b0781a501101af2e3fa6e05310320a6fb678ca5d4f5987751fefc4e5d8733836044edae3695c4dd
+  languageName: node
+  linkType: hard
+
 "expect@npm:^27.3.1":
   version: 27.3.1
   resolution: "expect@npm:27.3.1"
@@ -3037,6 +3044,7 @@ __metadata:
     "@types/jest": ^27.0.2
     "@types/node": ^16.11.6
     "@types/supertest": ^2.0.11
+    expect-type: ^0.13.0
     jest: ^27.3.1
     supertest: ^6.1.6
     ts-jest: ^27.0.7
