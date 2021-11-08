@@ -12,5 +12,6 @@
     "declaration": true,
     "moduleResolution": "node",
     "strictNullChecks": true
-  }
+  },
+  "include": ["./src", "./test"]
 }
