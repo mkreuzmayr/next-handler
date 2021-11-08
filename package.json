@@ -1,7 +1,19 @@
 {
   "name": "next-handler",
   "version": "0.1.8",
-  "description": "",
+  "description": "Type save handler generator for Next.js API Routes.",
+  "author": "mkreuzmayr",
+  "license": "MIT",
+  "keywords": [
+    "typescript",
+    "nextjs",
+    "api",
+    "handler"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mkreuzmayr/next-handler"
+  },
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -12,9 +24,6 @@
     "build": "tsc",
     "prepublishOnly": "yarn build"
   },
-  "keywords": [],
-  "author": "mkreuzmayr",
-  "license": "MIT",
   "volta": {
     "node": "16.13.0"
   },
