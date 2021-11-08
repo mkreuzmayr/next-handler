@@ -1,3 +1,6 @@
+import { IncomingMessage, ServerResponse } from 'http';
+import { parse as urlParse } from 'url';
+
 export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
 // Request type with added body and query types
@@ -7,145 +10,164 @@ export type ApiRequestTyped<TApiRequest, TBody, TQuery> = {
 } & Omit<TApiRequest, 'body' | 'query'>;
 
 // Handler context parameter type
-export type RequestContext<TApiRequest, TApiResponse, TBody, TQuery, TContext> =
-  {
-    req: ApiRequestTyped<TApiRequest, TBody, TQuery>;
-    res: TApiResponse;
-  } & TContext;
-
-// Parameter type for context creation function
-export type ApiContextFuncProps<TApiRequest, TApiResponse> = {
+export type RequestContext<TApiRequest, TApiResponse> = {
   req: TApiRequest;
   res: TApiResponse;
 };
 
-// Function type for context creation
-export type ApiContextFunc<TApiRequest, TApiResponse, TContext> = (
-  ctx: ApiContextFuncProps<TApiRequest, TApiResponse>
-) => TContext;
-
-// Handler response tuple
-export type HandlerResponse<TResponseData> =
-  | [number, TResponseData | TResponseData[]]
-  | TResponseData
-  | TResponseData[];
-
 // Handler himself
-export type Handler<TBody, TQuery, TResponseData, TContext> = (
-  ctx: RequestContext<unknown, unknown, TBody, TQuery, TContext>
-) => HandlerResponse<TResponseData> | Promise<HandlerResponse<TResponseData>>;
+export type Handler<
+  TBody,
+  TQuery,
+  TResponseData,
+  TApiRequest = unknown,
+  TApiResponse = unknown
+> = (
+  ctx: RequestContext<ApiRequestTyped<TApiRequest, TBody, TQuery>, TApiResponse>
+) => TResponseData | Promise<TResponseData>;
+
+// Validation schema container
+export type Schemas<TQuery, TBody> = {
+  query?: ZodSchemaLike<TQuery>;
+  body?: ZodSchemaLike<TBody>;
+};
+
+type IncomingApiRequest<TApiRequest = IncomingMessage> = TApiRequest & {
+  body?: any;
+  query?: any;
+};
 
 // Type definition object for handlers
-export type HandlerDefinition<TContext> = Partial<
-  Record<HttpMethod, Handler<unknown, unknown, unknown, TContext>>
+export type HandlerDefinition = Partial<
+  Record<
+    HttpMethod,
+    {
+      schemas: Schemas<unknown, unknown>;
+      handler: Handler<unknown, unknown, unknown>;
+    }
+  >
 >;
 
-// Option Type for handlerFactory options
-export type HandlerFactoryOptions<TApiRequest, TApiResponse, TContext> = {
-  createContext?: ApiContextFunc<TApiRequest, TApiResponse, TContext>;
-  onError?: (err: unknown, ctx: TContext | undefined) => void;
-  onNotFound?: (ctx: TContext | undefined) => void;
+// Option type for handlerFactory options
+export type HandlerFactoryOptions<TApiRequest, TApiResponse> = {
+  onError?: (
+    ctx: RequestContext<TApiRequest, TApiResponse> & { err: unknown }
+  ) => void;
+  onNotFound?: (ctx: RequestContext<TApiRequest, TApiResponse>) => void;
 };
 
 export type ZodSchemaLike<TInput = unknown> = {
   parseAsync: (input: any) => Promise<TInput>;
 };
 
-const jsonResponse = (res: any, status: number, data?: unknown): void => {
+export const jsonResponse = (
+  res: any,
+  status: number,
+  data?: unknown
+): void => {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
   res.end(data ? JSON.stringify(data) : '');
 };
 
-// function to create generic handler methods for method chaining
+const parseBody = async (req: IncomingApiRequest): Promise<unknown> => {
+  if (req.body) {
+    return req.body;
+  }
+  const buffers = [];
+  for await (const chunk of req) {
+    buffers.push(chunk);
+  }
+  const data = Buffer.concat(buffers).toString();
+  return data ? JSON.parse(data) : null;
+};
+
+const parseQuery = (req: IncomingApiRequest): unknown => {
+  if (req.query) {
+    return req.query;
+  }
+  return urlParse(req.url ?? '', true).query;
+};
+
+const checkSchema = async (obj: unknown, schema?: ZodSchemaLike) => {
+  return schema ? await schema.parseAsync(obj) : obj;
+};
+
+// Function to create generic handler methods for method chaining
 const factoryFunction = <
   TMethod extends HttpMethod,
-  TApiRequest,
-  TApiResponse,
-  TContext
+  TApiRequest extends IncomingMessage,
+  TApiResponse extends ServerResponse
 >(
   method: TMethod,
-  tdef: HandlerDefinition<TContext>,
-  options?: HandlerFactoryOptions<TApiRequest, TApiResponse, TContext>
+  tdef: HandlerDefinition,
+  options?: HandlerFactoryOptions<TApiRequest, TApiResponse>
 ) => {
   return <TBody = unknown, TQuery = unknown, TResponseData = unknown>(
-    schemas: {
-      query?: ZodSchemaLike<TQuery>;
-      body?: ZodSchemaLike<TBody>;
-    },
-    handler: Handler<TBody, TQuery, TResponseData, TContext>
+    schemas: Schemas<TQuery, TBody>,
+    handler: Handler<TBody, TQuery, TResponseData, TApiRequest, TApiResponse>
   ) => {
     // Extend old type definition with new handler type
     type NewHandlerFactory = typeof tdef & Record<TMethod, typeof handler>;
     // Return handler with new type definiton
-    return createHandler<
-      TApiRequest,
-      TApiResponse,
-      TContext,
-      NewHandlerFactory
-    >(options, {
+    return nextHandler<TApiRequest, TApiResponse, NewHandlerFactory>(options, {
       ...tdef,
-      [method]: handler,
+      [method]: {
+        handler,
+        schemas,
+      },
     } as NewHandlerFactory);
   };
 };
 
 const buildHandler =
-  <TApiRequest, TApiResponse, TContext>(
-    tdef: HandlerDefinition<TContext>,
-    options?: HandlerFactoryOptions<TApiRequest, TApiResponse, TContext>
+  <TApiRequest extends IncomingMessage, TApiResponse extends ServerResponse>(
+    tdef: HandlerDefinition,
+    options?: HandlerFactoryOptions<TApiRequest, TApiResponse>
   ) =>
   () =>
-  async (req: any, res: any) => {
-    let context: TContext | undefined = undefined;
+  async (req: IncomingApiRequest<TApiRequest>, res: TApiResponse) => {
     try {
-      const createContext = options?.createContext;
-      context = createContext ? createContext({ req, res }) : ({} as TContext);
       if (req.method) {
         // Cast method to lower case to be able to query _tdef
         const method = req.method.toLowerCase() as HttpMethod;
-        const handlerFunc = tdef[method];
-        if (handlerFunc) {
-          const promise = handlerFunc({ req, res, ...context });
+        const handlerContainer = tdef[method];
+        if (handlerContainer) {
+          const { handler, schemas } = handlerContainer;
+          const parsedBody = await parseBody(req);
+          const parsedQuery = parseQuery(req);
+          const body = checkSchema(parsedBody, schemas.body);
+          const query = await checkSchema(parsedQuery, schemas.query);
+          res.statusCode = 0;
+          const promise = handler({ req: { ...req, body, query }, res });
           // Promise.resolve does not care if it is a Promise or not
           const response = await Promise.resolve(promise);
           // Check if return type is a status tuple
-          if (Array.isArray(response)) {
-            const [status, data] = response;
-            jsonResponse(res, status, data);
-          } else {
-            jsonResponse(res, 200, response);
-          }
+          const status = res.statusCode === 0 ? 200 : res.statusCode;
+          return jsonResponse(res, status, response);
         }
       }
       // If method or handler function is not availabe call onNotFound or return 404
       const onNotFound = options?.onNotFound;
       if (onNotFound) {
-        return onNotFound(context);
+        return onNotFound({ req, res });
       }
-      jsonResponse(res, 404);
+      return jsonResponse(res, 404);
     } catch (err) {
       const onError = options?.onError;
       if (onError) {
-        return onError(err, context);
+        return onError({ req, res, err });
       }
-      jsonResponse(res, 400);
+      return jsonResponse(res, 500);
     }
   };
 
-export const createHandler = <
-  TApiRequest,
-  TApiResponse,
-  TContext = RequestContext<
-    TApiRequest,
-    TApiResponse,
-    unknown,
-    unknown,
-    unknown
-  >,
-  TDef extends HandlerDefinition<TContext> = HandlerDefinition<TContext>
+export const nextHandler = <
+  TApiRequest extends IncomingMessage,
+  TApiResponse extends ServerResponse,
+  TDef extends HandlerDefinition = HandlerDefinition
 >(
-  options?: HandlerFactoryOptions<TApiRequest, TApiResponse, TContext>,
+  options?: HandlerFactoryOptions<TApiRequest, TApiResponse>,
   _tdef: TDef = {} as TDef
 ) => {
   return {
@@ -159,21 +181,20 @@ export const createHandler = <
   };
 };
 
+export const nh = nextHandler;
+
 export type inferType<THandler> = THandler extends Handler<
   infer TBody,
   infer TQuery,
-  infer TResponseData,
-  infer TContext
+  infer TResponseData
 >
   ? {
       body: TBody;
       query: TQuery;
       data: TResponseData;
-      context: TContext;
     }
   : never;
 
 export type inferBodyType<THandler> = inferType<THandler>['body'];
 export type inferQueryType<THandler> = inferType<THandler>['query'];
 export type inferResponseType<THandler> = inferType<THandler>['data'];
-export type inferContextType<THandler> = inferType<THandler>['context'];
