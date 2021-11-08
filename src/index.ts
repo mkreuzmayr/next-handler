@@ -27,7 +27,7 @@ export type Handler<
 ) => TResponseData | Promise<TResponseData>;
 
 // Validation schema container
-export type Schemas<TQuery, TBody> = {
+type Schemas<TQuery, TBody> = {
   query?: ZodSchemaLike<TQuery>;
   body?: ZodSchemaLike<TBody>;
 };
@@ -38,33 +38,36 @@ type IncomingApiRequest<TApiRequest = IncomingMessage> = TApiRequest & {
 };
 
 // Type definition object for handlers
-export type HandlerDefinition = Partial<
+type HandlerDefinition = Partial<
   Record<
     HttpMethod,
     {
       schemas: Schemas<unknown, unknown>;
-      handler: Handler<unknown, unknown, unknown>;
+      handler: Handler<unknown, unknown, unknown, unknown, unknown>;
     }
   >
 >;
 
 // Option type for handlerFactory options
-export type HandlerFactoryOptions<TApiRequest, TApiResponse> = {
+export type HandlerFactoryOptions<
+  TApiRequest,
+  TApiResponse,
+  TError,
+  TNotFound
+> = {
   onError?: (
     ctx: RequestContext<TApiRequest, TApiResponse> & { err: unknown }
-  ) => void;
-  onNotFound?: (ctx: RequestContext<TApiRequest, TApiResponse>) => void;
+  ) => TError | Promise<TError>;
+  onNotFound?: (
+    ctx: RequestContext<TApiRequest, TApiResponse>
+  ) => TNotFound | Promise<TNotFound>;
 };
 
 export type ZodSchemaLike<TInput = unknown> = {
   parseAsync: (input: any) => Promise<TInput>;
 };
 
-export const jsonResponse = (
-  res: any,
-  status: number,
-  data?: unknown
-): void => {
+const jsonResponse = (res: any, status: number, data?: unknown): void => {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
   res.end(data ? JSON.stringify(data) : '');
@@ -97,11 +100,13 @@ const checkSchema = async (obj: unknown, schema?: ZodSchemaLike) => {
 const factoryFunction = <
   TMethod extends HttpMethod,
   TApiRequest extends IncomingMessage,
-  TApiResponse extends ServerResponse
+  TApiResponse extends ServerResponse,
+  TError,
+  TNotFound
 >(
   method: TMethod,
   tdef: HandlerDefinition,
-  options?: HandlerFactoryOptions<TApiRequest, TApiResponse>
+  options?: HandlerFactoryOptions<TApiRequest, TApiResponse, TError, TNotFound>
 ) => {
   return <TBody = unknown, TQuery = unknown, TResponseData = unknown>(
     schemas: Schemas<TQuery, TBody>,
@@ -110,7 +115,13 @@ const factoryFunction = <
     // Extend old type definition with new handler type
     type NewHandlerFactory = typeof tdef & Record<TMethod, typeof handler>;
     // Return handler with new type definiton
-    return nextHandler<TApiRequest, TApiResponse, NewHandlerFactory>(options, {
+    return nextHandler<
+      TApiRequest,
+      TApiResponse,
+      NewHandlerFactory,
+      TError,
+      TNotFound
+    >(options, {
       ...tdef,
       [method]: {
         handler,
@@ -120,14 +131,40 @@ const factoryFunction = <
   };
 };
 
+const callHandler = async <THandler extends (...args: any) => any>(
+  res: ServerResponse,
+  handler: THandler | undefined,
+  handlerArg: Parameters<THandler>[0],
+  defaultStatus: number
+) => {
+  if (!handler) {
+    return jsonResponse(res, defaultStatus);
+  }
+  const promise = handler(handlerArg);
+  const response = await Promise.resolve(promise);
+  const status = res.statusCode === 0 ? defaultStatus : res.statusCode;
+  return jsonResponse(res, status, response);
+};
+
 const buildHandler =
-  <TApiRequest extends IncomingMessage, TApiResponse extends ServerResponse>(
+  <
+    TApiRequest extends IncomingMessage,
+    TApiResponse extends ServerResponse,
+    TError = unknown,
+    TNotFound = unknown
+  >(
     tdef: HandlerDefinition,
-    options?: HandlerFactoryOptions<TApiRequest, TApiResponse>
+    options?: HandlerFactoryOptions<
+      TApiRequest,
+      TApiResponse,
+      TError,
+      TNotFound
+    >
   ) =>
   () =>
   async (req: IncomingApiRequest<TApiRequest>, res: TApiResponse) => {
     try {
+      res.statusCode = 0;
       if (req.method) {
         // Cast method to lower case to be able to query _tdef
         const method = req.method.toLowerCase() as HttpMethod;
@@ -138,40 +175,33 @@ const buildHandler =
           const parsedQuery = parseQuery(req);
           const body = checkSchema(parsedBody, schemas.body);
           const query = await checkSchema(parsedQuery, schemas.query);
-          res.statusCode = 0;
-          const promise = handler({ req: { ...req, body, query }, res });
-          // Promise.resolve does not care if it is a Promise or not
-          const response = await Promise.resolve(promise);
-          // Check if return type is a status tuple
-          const status = res.statusCode === 0 ? 200 : res.statusCode;
-          return jsonResponse(res, status, response);
+          return await callHandler(
+            res,
+            handler,
+            { req: { ...req, body, query }, res },
+            200
+          );
         }
       }
-      // If method or handler function is not availabe call onNotFound or return 404
-      const onNotFound = options?.onNotFound;
-      if (onNotFound) {
-        return onNotFound({ req, res });
-      }
-      return jsonResponse(res, 404);
+      await callHandler(res, options?.onNotFound, { req, res }, 404);
     } catch (err) {
-      const onError = options?.onError;
-      if (onError) {
-        return onError({ req, res, err });
-      }
-      return jsonResponse(res, 500);
+      await callHandler(res, options?.onError, { req, res, err }, 500);
     }
   };
 
 export const nextHandler = <
   TApiRequest extends IncomingMessage,
   TApiResponse extends ServerResponse,
-  TDef extends HandlerDefinition = HandlerDefinition
+  TDef extends HandlerDefinition = HandlerDefinition,
+  TError = undefined,
+  TNotFound = undefined
 >(
-  options?: HandlerFactoryOptions<TApiRequest, TApiResponse>,
+  options?: HandlerFactoryOptions<TApiRequest, TApiResponse, TError, TNotFound>,
   _tdef: TDef = {} as TDef
 ) => {
   return {
     _tdef,
+    _options: options,
     get: factoryFunction('get', _tdef, options),
     post: factoryFunction('post', _tdef, options),
     put: factoryFunction('put', _tdef, options),

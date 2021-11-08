@@ -1,7 +1,7 @@
 import { createServer } from 'http';
 import supertest from 'supertest';
 import { z } from 'zod';
-import { jsonResponse, nh } from '../src/index';
+import { nh } from '../src/index';
 
 const rq = (handler: any) => supertest(createServer(handler.build()));
 
@@ -31,10 +31,25 @@ test('error', async () => {
     .expect('');
 });
 
+test('notFound', async () => {
+  const handler = nh().get({}, () => {
+    throw new Error();
+  });
+
+  return await rq(handler)
+    .post('/')
+    .expect('Content-Type', 'application/json')
+    .expect(404)
+    .expect('');
+});
+
 test('custom-error', async () => {
+  const errorData = { error: 'Teapot Error' };
+
   const handler = nh({
-    onError: (ctx) => {
-      jsonResponse(ctx!.res, 418);
+    onError: async ({ res }) => {
+      res.statusCode = 418;
+      return errorData;
     },
   }).get({}, () => {
     throw new Error();
@@ -44,7 +59,26 @@ test('custom-error', async () => {
     .get('/')
     .expect('Content-Type', 'application/json')
     .expect(418)
-    .expect('');
+    .expect(JSON.stringify(errorData));
+});
+
+test('custom-notFound', async () => {
+  const notFoundData = { error: 'Unavailable' };
+
+  const handler = nh({
+    onNotFound: async ({ res }) => {
+      res.statusCode = 451;
+      return notFoundData;
+    },
+  }).put({}, () => {
+    throw new Error();
+  });
+
+  return await rq(handler)
+    .patch('/')
+    .expect('Content-Type', 'application/json')
+    .expect(451)
+    .expect(JSON.stringify(notFoundData));
 });
 
 test('body', async () => {
@@ -103,6 +137,8 @@ test('query', async () => {
       return req.query;
     }
   );
+
+  const query = { text: 'test', id: 0 };
 
   return await rq(handler)
     .post('/?text=test&id=0')
