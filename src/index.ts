@@ -213,10 +213,33 @@ export const nextHandler = <
 
 export const nh = nextHandler;
 
-export type inferType<THandler> = THandler extends Handler<
+type NextHandler = ReturnType<typeof nextHandler>;
+
+export type InferType<TFactory extends NextHandler> = InferDefType<
+  TFactory['_tdef']
+> &
+  InferErrorAndNotFoundTypes<TFactory['_options']>;
+
+type InferErrorAndNotFoundTypes<TFactoryOpts> =
+  TFactoryOpts extends HandlerFactoryOptions<
+    infer TApiRequest,
+    infer TApiResponse,
+    infer TError,
+    infer TNotFound
+  >
+    ? { error: TError; notFound: TNotFound }
+    : never;
+
+type InferDefType<TDef extends HandlerDefinition> = {
+  [TMethod in HttpMethod]: InferHandlerTypes<TDef[TMethod]>;
+};
+
+type InferHandlerTypes<THandler> = THandler extends Handler<
   infer TBody,
   infer TQuery,
-  infer TResponseData
+  infer TResponseData,
+  infer TApiRequest,
+  infer TApiResponse
 >
   ? {
       body: TBody;
@@ -224,7 +247,3 @@ export type inferType<THandler> = THandler extends Handler<
       data: TResponseData;
     }
   : never;
-
-export type inferBodyType<THandler> = inferType<THandler>['body'];
-export type inferQueryType<THandler> = inferType<THandler>['query'];
-export type inferResponseType<THandler> = inferType<THandler>['data'];
