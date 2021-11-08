@@ -1,6 +1,6 @@
 {
   "name": "next-handler",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "Type save handler generator for Next.js API Routes.",
   "author": "mkreuzmayr",
   "license": "MIT",
