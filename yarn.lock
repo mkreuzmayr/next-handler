@@ -3041,6 +3041,7 @@ __metadata:
     supertest: ^6.1.6
     ts-jest: ^27.0.7
     typescript: ^4.4.4
+    zod: ^3.11.6
   languageName: unknown
   linkType: soft
 
@@ -4204,5 +4205,12 @@ __metadata:
     y18n: ^5.0.5
     yargs-parser: ^20.2.2
   checksum: b14afbb51e3251a204d81937c86a7e9d4bdbf9a2bcee38226c900d00f522969ab675703bee2a6f99f8e20103f608382936034e64d921b74df82b63c07c5e8f59
+  languageName: node
+  linkType: hard
+
+"zod@npm:^3.11.6":
+  version: 3.11.6
+  resolution: "zod@npm:3.11.6"
+  checksum: 044ac416450f179a0c88240f27849d2886c777cebade42df10e5f04125b0265cec82d9bd741a7dcb11796b2ea88b32c86be7d36932a4bed6af57002560359db1
   languageName: node
   linkType: hard
