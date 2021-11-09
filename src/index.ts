@@ -103,11 +103,12 @@ const factoryFunction = <
   TMethod extends HttpMethod,
   TApiRequest extends IncomingMessage,
   TApiResponse extends ServerResponse,
+  TDef extends HandlerDefinition,
   TError,
   TNotFound
 >(
   method: TMethod,
-  tdef: HandlerDefinition,
+  tdef: TDef,
   options?: HandlerFactoryOptions<TApiRequest, TApiResponse, TError, TNotFound>
 ) => {
   return <TBody, TQuery, TResponseData>(

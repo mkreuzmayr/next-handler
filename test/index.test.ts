@@ -181,3 +181,42 @@ test('query-fail', async () => {
     .expect(500)
     .expect('');
 });
+
+test('infer', async () => {
+  const getData = { method: 'get' };
+  const postData = { method: 'post' };
+  const putData = { method: 'put' };
+  const patchData = { method: 'patch' };
+  const deleteData = { method: 'delete' };
+
+  const handler = nh()
+    .get({}, () => {
+      return getData;
+    })
+    .post({}, () => {
+      return postData;
+    })
+    .put({}, () => {
+      return putData;
+    })
+    .patch({}, () => {
+      return patchData;
+    })
+    .delete({}, () => {
+      return deleteData;
+    });
+
+  type HandlerType = InferType<typeof handler>;
+
+  expectTypeOf<HandlerType['get']['data']>().toMatchTypeOf(getData);
+  expectTypeOf<HandlerType['post']['data']>().toMatchTypeOf(postData);
+  expectTypeOf<HandlerType['put']['data']>().toMatchTypeOf(putData);
+  expectTypeOf<HandlerType['patch']['data']>().toMatchTypeOf(patchData);
+  expectTypeOf<HandlerType['delete']['data']>().toMatchTypeOf(deleteData);
+
+  return await rq(handler)
+    .put('/')
+    .expect('Content-Type', 'application/json')
+    .expect(200)
+    .expect(JSON.stringify(putData));
+});
