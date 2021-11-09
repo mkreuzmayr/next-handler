@@ -37,14 +37,16 @@ type IncomingApiRequest<TApiRequest = IncomingMessage> = TApiRequest & {
   query?: any;
 };
 
+type HandlerContainer<THandler> = {
+  schemas: Schemas<unknown, unknown>;
+  handler: THandler;
+};
+
 // Type definition object for handlers
 type HandlerDefinition = Partial<
   Record<
     HttpMethod,
-    {
-      schemas: Schemas<unknown, unknown>;
-      handler: Handler<unknown, unknown, unknown, unknown, unknown>;
-    }
+    HandlerContainer<Handler<unknown, unknown, unknown, unknown, unknown>>
   >
 >;
 
@@ -108,12 +110,13 @@ const factoryFunction = <
   tdef: HandlerDefinition,
   options?: HandlerFactoryOptions<TApiRequest, TApiResponse, TError, TNotFound>
 ) => {
-  return <TBody = unknown, TQuery = unknown, TResponseData = unknown>(
+  return <TBody, TQuery, TResponseData>(
     schemas: Schemas<TQuery, TBody>,
     handler: Handler<TBody, TQuery, TResponseData, TApiRequest, TApiResponse>
   ) => {
     // Extend old type definition with new handler type
-    type NewHandlerFactory = typeof tdef & Record<TMethod, typeof handler>;
+    type NewHandlerFactory = typeof tdef &
+      Record<TMethod, HandlerContainer<typeof handler>>;
     // Return handler with new type definiton
     return nextHandler<
       TApiRequest,
@@ -234,16 +237,19 @@ type InferDefType<TDef extends HandlerDefinition> = {
   [TMethod in HttpMethod]: InferHandlerTypes<TDef[TMethod]>;
 };
 
-type InferHandlerTypes<THandler> = THandler extends Handler<
-  infer TBody,
-  infer TQuery,
-  infer TResponseData,
-  infer TApiRequest,
-  infer TApiResponse
->
-  ? {
-      body: TBody;
-      query: TQuery;
-      data: TResponseData;
-    }
-  : never;
+type InferHandlerTypes<THandlerContainer> =
+  THandlerContainer extends HandlerContainer<infer THandler>
+    ? THandler extends Handler<
+        infer TBody,
+        infer TQuery,
+        infer TResponseData,
+        infer TApiRequest,
+        infer TApiResponse
+      >
+      ? {
+          body: TBody;
+          query: TQuery;
+          data: TResponseData;
+        }
+      : never
+    : never;
