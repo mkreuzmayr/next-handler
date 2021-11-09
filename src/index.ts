@@ -173,7 +173,7 @@ const buildHandler =
           const { handler, schemas } = handlerContainer;
           const parsedBody = await parseBody(req);
           const parsedQuery = parseQuery(req);
-          const body = checkSchema(parsedBody, schemas.body);
+          const body = await checkSchema(parsedBody, schemas.body);
           const query = await checkSchema(parsedQuery, schemas.query);
           return await callHandler(
             res,
